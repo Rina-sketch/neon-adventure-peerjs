@@ -21,11 +21,15 @@ io.on('connection', (socket) => {
   console.log('Клиент подключился:', socket.id);
 
   socket.on('join', (roomId) => {
+    console.log(`Клиент ${socket.id} пытается подключиться к комнате ${roomId}`);
     socket.join(roomId);
-    socket.to(roomId).emit('playerJoined', socket.id);
+    // Уведомляем хоста о подключении клиента
+    io.to(roomId).emit('playerJoined', socket.id);
+    console.log(`Клиент ${socket.id} успешно подключился к комнате ${roomId}`);
   });
 
   socket.on('gameData', (roomId, data) => {
+    console.log(`Передача данных в комнату ${roomId}:`, data.type);
     socket.to(roomId).emit('gameData', data);
   });
 
