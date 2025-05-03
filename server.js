@@ -28,6 +28,19 @@ io.on('connection', (socket) => {
     console.log(`Клиент ${socket.id} успешно подключился к комнате ${roomId}`);
   });
 
+  socket.on('hostReady', (roomId) => {
+    console.log(`Хост ${socket.id} готов в комнате ${roomId}`);
+    io.to(roomId).emit('hostReady');
+  });
+
+  socket.on('clientReady', (data) => {
+    console.log(`Клиент ${socket.id} готов, отправка данных хосту`);
+    if (socket.rooms.size > 1) {
+      const roomId = Array.from(socket.rooms)[1]; // Получаем ID комнаты
+      io.to(roomId).emit('clientReady', data);
+    }
+  });
+
   socket.on('gameData', (roomId, data) => {
     console.log(`Передача данных в комнату ${roomId}:`, data.type);
     socket.to(roomId).emit('gameData', data);
