@@ -42,7 +42,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('gameData', (roomId, data) => {
-    console.log(`Передача данных в комнату ${roomId}:`, data.type);
+    console.log(`Передача данных в комнату ${roomId}:`, data.type, 'от', socket.id, 'к другим');
     socket.to(roomId).emit('gameData', data);
   });
 
