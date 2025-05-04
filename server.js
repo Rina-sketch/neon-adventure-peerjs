@@ -23,20 +23,20 @@ io.on('connection', (socket) => {
   socket.on('join', (roomId) => {
     console.log(`Клиент ${socket.id} пытается подключиться к комнате ${roomId}`);
     socket.join(roomId);
-    io.to(roomId).emit('gameData', { type: 'playerJoined', playerId: socket.id });
+    io.to(roomId).emit('playerJoined', socket.id);
     console.log(`Клиент ${socket.id} успешно подключился к комнате ${roomId}`);
   });
 
   socket.on('hostReady', (roomId) => {
     console.log(`Хост ${socket.id} готов в комнате ${roomId}`);
-    io.to(roomId).emit('gameData', { type: 'hostReady' });
+    io.to(roomId).emit('hostReady');
   });
 
   socket.on('clientReady', (data) => {
     console.log(`Клиент ${socket.id} готов, отправка данных хосту`);
     if (socket.rooms.size > 1) {
       const roomId = Array.from(socket.rooms)[1];
-      io.to(roomId).emit('gameData', { type: 'clientReady', data });
+      io.to(roomId).emit('clientReady', data);
     }
   });
 
@@ -47,7 +47,6 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('Клиент отключился:', socket.id);
-    io.emit('gameData', { type: 'playerDisconnected', playerId: socket.id });
   });
 });
 
