@@ -8,7 +8,7 @@ const port = process.env.PORT || 9000;
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*', // Разрешить подключения от всех источников (для теста)
+    origin: '*',
     methods: ['GET', 'POST']
   }
 });
@@ -23,7 +23,6 @@ io.on('connection', (socket) => {
   socket.on('join', (roomId) => {
     console.log(`Клиент ${socket.id} пытается подключиться к комнате ${roomId}`);
     socket.join(roomId);
-    // Уведомляем хоста о подключении клиента
     io.to(roomId).emit('playerJoined', socket.id);
     console.log(`Клиент ${socket.id} успешно подключился к комнате ${roomId}`);
   });
@@ -36,14 +35,14 @@ io.on('connection', (socket) => {
   socket.on('clientReady', (data) => {
     console.log(`Клиент ${socket.id} готов, отправка данных хосту`);
     if (socket.rooms.size > 1) {
-      const roomId = Array.from(socket.rooms)[1]; // Получаем ID комнаты
+      const roomId = Array.from(socket.rooms)[1];
       io.to(roomId).emit('clientReady', data);
     }
   });
 
   socket.on('gameData', (roomId, data) => {
-    console.log(`Передача данных в комнату ${roomId}:`, data.type, 'от', socket.id, 'к другим');
-    socket.to(roomId).emit('gameData', data);
+    console.log(`Передача данных в комнату ${roomId}:`, data.type, 'от', socket.id);
+    io.to(roomId).emit('gameData', data);
   });
 
   socket.on('disconnect', () => {
