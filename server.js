@@ -6,7 +6,7 @@ const io = require('socket.io')(http, {
 });
 
 // Serve a basic endpoint for health checks
-app.get('/', (req, res) => res.send('Socket.IO Server for Neon Adventure'));
+app.get('/', (req, res) => res.send('Socket.IO Server'));
 
 // Store rooms and their states
 const rooms = {};
@@ -17,32 +17,33 @@ io.on('connection', (socket) => {
     // Handle joining a room
     socket.on('joinRoom', (roomId) => {
         if (!rooms[roomId]) {
-            rooms[roomId] = { players: [], level: null };
+            rooms[roomId] = { players: [], level: null, gameState: null };
         }
         if (rooms[roomId].players.length >= 2) {
             socket.emit('roomFull', 'This room is full. Try another room.');
             return;
         }
         socket.join(roomId);
-        rooms[roomId].players.push({ id: socket.id, playerNumber: rooms[roomId].players.length + 1 });
-        socket.emit('playerNumber', rooms[roomId].players.length);
+        const playerNumber = rooms[roomId].players.length + 1;
+        rooms[roomId].players.push({ id: socket.id, playerNumber });
+        socket.emit('playerNumber', playerNumber);
+        socket.emit('roomId', roomId); // Send room ID to client
 
-        // If two players are in the room, start the game
         if (rooms[roomId].players.length === 2) {
             io.to(roomId).emit('startGame', rooms[roomId].players);
         }
     });
 
-    // Handle player position and state updates
+    // Handle player updates (position, skin, etc.)
     socket.on('playerUpdate', (data) => {
         const roomId = data.roomId;
         if (rooms[roomId]) {
             socket.to(roomId).emit('updatePlayer', {
                 playerId: socket.id,
                 pos: data.pos,
-                speed: data.speed,
                 skin: data.skin,
                 direction: data.direction,
+                isMoving: data.isMoving,
                 keys: data.keys,
                 lives: data.lives,
                 hasSword: data.hasSword,
@@ -53,7 +54,6 @@ io.on('connection', (socket) => {
                 catEars: data.catEars,
                 earAngle: data.earAngle,
                 tailAngle: data.tailAngle,
-                isMoving: data.isMoving,
                 attackCooldown: data.attackCooldown
             });
         }
@@ -67,20 +67,69 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Handle level state synchronization
+    // Handle door unlocking
+    socket.on('doorUnlocked', (data) => {
+        const roomId = data.roomId;
+        if (rooms[roomId]) {
+            io.to(roomId).emit('unlockDoor', data.doorIndex);
+        }
+    });
+
+    // Handle chest opening
+    socket.on('chestOpened', (data) => {
+        const roomId = data.roomId;
+        if (rooms[roomId]) {
+            io.to(roomId).emit('openChest', data.chestIndex);
+        }
+    });
+
+    // Handle enemy defeat
+    socket.on('enemyDefeated', (data) => {
+        const roomId = data.roomId;
+        if (rooms[roomId]) {
+            io.to(roomId).emit('removeEnemy', data.enemyIndex);
+        }
+    });
+
+    // Handle boss defeat
+    socket.on('bossDefeated', (data) => {
+        const roomId = data.roomId;
+        if (rooms[roomId]) {
+            io.to(roomId).emit('defeatBoss');
+        }
+    });
+
+    // Handle puzzle solving
+    socket.on('puzzleSolved', (data) => {
+        const roomId = data.roomId;
+        if (rooms[roomId]) {
+            io.to(roomId).emit('solvePuzzle');
+        }
+    });
+
+    // Handle level state updates
     socket.on('levelState', (data) => {
         const roomId = data.roomId;
         if (rooms[roomId]) {
             rooms[roomId].level = data.level;
-            io.to(roomId).emit('syncLevel', data.level);
+            rooms[roomId].gameState = data.gameState;
+            io.to(roomId).emit('syncLevel', data);
         }
     });
 
-    // Handle player death
-    socket.on('playerDied', () => {
-        const roomId = Array.from(socket.rooms).find(room => room !== socket.id);
-        if (roomId && rooms[roomId]) {
-            io.to(roomId).emit('playerDied');
+    // Handle level completion
+    socket.on('levelComplete', (data) => {
+        const roomId = data.roomId;
+        if (rooms[roomId]) {
+            io.to(roomId).emit('showLevelComplete');
+        }
+    });
+
+    // Handle game over
+    socket.on('gameOver', (data) => {
+        const roomId = data.roomId;
+        if (rooms[roomId]) {
+            io.to(roomId).emit('showGameOver');
         }
     });
 

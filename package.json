@@ -1,7 +1,7 @@
 {
-  "name": "socketio-server",
+  "name": "neon-adventure",
   "version": "1.0.0",
-  "description": "Socket.IO server for Neon Adventure",
+  "description": "Neon Adventure game with Socket.IO co-op",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
