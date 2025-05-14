@@ -5,149 +5,112 @@ const io = require('socket.io')(http, {
     cors: { origin: "*" }
 });
 
-// Serve a basic endpoint for health checks
 app.get('/', (req, res) => res.send('Socket.IO Server'));
 
-// Store rooms and their states
 const rooms = {};
 
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
 
-    // Handle joining a room
-    socket.on('joinRoom', (roomId) => {
+    // Обработка создания/присоединения к комнате
+    socket.on('join', (roomId) => {
         if (!rooms[roomId]) {
-            rooms[roomId] = { players: [], level: null, gameState: null };
+            rooms[roomId] = { players: [], gameState: null };
+            console.log(`Room ${roomId} created`);
         }
+        
         if (rooms[roomId].players.length >= 2) {
-            socket.emit('roomFull', 'This room is full. Try another room.');
+            socket.emit('roomFull', 'Комната заполнена. Максимум 2 игрока.');
             return;
         }
+        
         socket.join(roomId);
         const playerNumber = rooms[roomId].players.length + 1;
-        rooms[roomId].players.push({ id: socket.id, playerNumber });
+        rooms[roomId].players.push(socket.id);
         socket.emit('playerNumber', playerNumber);
-        socket.emit('roomId', roomId); // Send room ID to client
-
+        
+        console.log(`Player ${socket.id} joined room ${roomId} as player ${playerNumber}`);
+        
         if (rooms[roomId].players.length === 2) {
-            io.to(roomId).emit('startGame', rooms[roomId].players);
-        }
-    });
-
-    // Handle player updates (position, skin, etc.)
-    socket.on('playerUpdate', (data) => {
-        const roomId = data.roomId;
-        if (rooms[roomId]) {
-            socket.to(roomId).emit('updatePlayer', {
-                playerId: socket.id,
-                pos: data.pos,
-                skin: data.skin,
-                direction: data.direction,
-                isMoving: data.isMoving,
-                keys: data.keys,
-                lives: data.lives,
-                hasSword: data.hasSword,
-                invincible: data.invincible,
-                invincibleTimer: data.invincibleTimer,
-                hasPotion: data.hasPotion,
-                damageMultiplier: data.damageMultiplier,
-                catEars: data.catEars,
-                earAngle: data.earAngle,
-                tailAngle: data.tailAngle,
-                attackCooldown: data.attackCooldown
+            io.to(roomId).emit('startGame', { 
+                roomId: roomId,
+                players: rooms[roomId].players 
             });
         }
     });
 
-    // Handle key collection
+    // Обработка обновлений игрока
+    socket.on('playerUpdate', (data) => {
+        socket.to(data.roomId).emit('playerUpdate', {
+            playerId: socket.id,
+            pos: data.pos,
+            speed: data.speed,
+            direction: data.direction,
+            keys: data.keys,
+            lives: data.lives
+        });
+    });
+
+    // Обработка сбора ключей
     socket.on('keyCollected', (data) => {
-        const roomId = data.roomId;
-        if (rooms[roomId]) {
-            io.to(roomId).emit('removeKey', data.keyIndex);
-        }
+        io.to(data.roomId).emit('keyCollected', {
+            playerId: socket.id,
+            keyIndex: data.keyIndex,
+            totalKeys: data.totalKeys
+        });
     });
 
-    // Handle door unlocking
+    // Обработка открытия дверей
     socket.on('doorUnlocked', (data) => {
-        const roomId = data.roomId;
-        if (rooms[roomId]) {
-            io.to(roomId).emit('unlockDoor', data.doorIndex);
-        }
+        io.to(data.roomId).emit('doorUnlocked', {
+            doorIndex: data.doorIndex
+        });
     });
 
-    // Handle chest opening
+    // Обработка открытия сундуков
     socket.on('chestOpened', (data) => {
-        const roomId = data.roomId;
-        if (rooms[roomId]) {
-            io.to(roomId).emit('openChest', data.chestIndex);
-        }
+        io.to(data.roomId).emit('chestOpened', {
+            chestIndex: data.chestIndex,
+            playerId: socket.id
+        });
     });
 
-    // Handle enemy defeat
+    // Обработка поражения врагов
     socket.on('enemyDefeated', (data) => {
-        const roomId = data.roomId;
-        if (rooms[roomId]) {
-            io.to(roomId).emit('removeEnemy', data.enemyIndex);
-        }
+        io.to(data.roomId).emit('enemyDefeated', {
+            enemyIndex: data.enemyIndex,
+            playerId: socket.id
+        });
     });
 
-    // Handle boss defeat
-    socket.on('bossDefeated', (data) => {
-        const roomId = data.roomId;
-        if (rooms[roomId]) {
-            io.to(roomId).emit('defeatBoss');
-        }
+    // Обработка смерти игрока
+    socket.on('playerDied', (data) => {
+        io.to(data.roomId).emit('playerDied', {
+            playerId: socket.id
+        });
     });
 
-    // Handle puzzle solving
-    socket.on('puzzleSolved', (data) => {
-        const roomId = data.roomId;
-        if (rooms[roomId]) {
-            io.to(roomId).emit('solvePuzzle');
-        }
-    });
-
-    // Handle level state updates
-    socket.on('levelState', (data) => {
-        const roomId = data.roomId;
-        if (rooms[roomId]) {
-            rooms[roomId].level = data.level;
-            rooms[roomId].gameState = data.gameState;
-            io.to(roomId).emit('syncLevel', data);
-        }
-    });
-
-    // Handle level completion
+    // Обработка завершения уровня
     socket.on('levelComplete', (data) => {
-        const roomId = data.roomId;
-        if (rooms[roomId]) {
-            io.to(roomId).emit('showLevelComplete');
-        }
+        io.to(data.roomId).emit('levelComplete');
     });
 
-    // Handle game over
-    socket.on('gameOver', (data) => {
-        const roomId = data.roomId;
-        if (rooms[roomId]) {
-            io.to(roomId).emit('showGameOver');
-        }
-    });
-
-    // Handle player disconnection
+    // Обработка отключения игрока
     socket.on('disconnect', () => {
         for (const roomId in rooms) {
-            const room = rooms[roomId];
-            const playerIndex = room.players.findIndex(p => p.id === socket.id);
-            if (playerIndex !== -1) {
-                room.players.splice(playerIndex, 1);
+            const index = rooms[roomId].players.indexOf(socket.id);
+            if (index !== -1) {
+                rooms[roomId].players.splice(index, 1);
                 io.to(roomId).emit('playerDisconnected', socket.id);
-                if (room.players.length === 0) {
+                console.log(`Player ${socket.id} disconnected from room ${roomId}`);
+                
+                if (rooms[roomId].players.length === 0) {
                     delete rooms[roomId];
+                    console.log(`Room ${roomId} deleted (no players)`);
                 }
                 break;
             }
         }
-        console.log('User disconnected:', socket.id);
     });
 });
 
