@@ -1,183 +1,106 @@
-let socket = null;
-let roomId = null;
-let isClientReady = false;
+const express = require('express');
+const app = express();
+const http = require('http').createServer(app);
+const io = require('socket.io')(http, {
+    cors: { origin: "*" }
+});
 
-// Initialize Socket.IO for cooperative mode
-function initPeer(host) {
-  isHost = host;
+// Serve a basic endpoint for health checks
+app.get('/', (req, res) => res.send('Socket.IO Server for Neon Adventure'));
 
-  // Закрываем старое соединение, если оно существует
-  if (socket) {
-    socket.disconnect();
-    socket = null;
-  }
+// Store rooms and their states
+const rooms = {};
 
-  socket = io('https://neon-adventure-peerjs.onrender.com', { // Замените на ваш домен
-    transports: ['websocket'],
-    reconnection: true,
-    reconnectionAttempts: 5
-  });
+io.on('connection', (socket) => {
+    console.log('A user connected:', socket.id);
 
-  socket.on('connect', () => {
-    console.log('Socket.IO подключено (хост):', socket.id);
-    if (isHost) {
-      roomId = socket.id; // Используем socket.id как ID комнаты
-      peerIdSpan.textContent = roomId;
-      peerIdDisplay.style.display = 'block';
-      showDialog(["Поделитесь этим ID с другом для совместной игры: " + roomId]);
-    }
-  });
-
-  socket.on('playerJoined', (playerId) => {
-    if (isHost) {
-      console.log('Клиент подключился к хосту:', playerId);
-      if (playerId === socket.id) {
-        console.warn('Хост пытается подключиться сам к себе, игнорируем');
-        return; // Игнорируем, если хост сам себя подключил
-      }
-      isCoopMode = true;
-      player2 = {
-        x: levels[currentLevel].startPos2.x,
-        y: levels[currentLevel].startPos2.y,
-        width: 30,
-        height: 30,
-        speed: 5,
-        direction: 'right',
-        keys: 0,
-        lives: 3,
-        hasSword: false,
-        invincible: false,
-        invincibleTimer: 0,
-        color: '#f00',
-        hasPotion: false,
-        damageMultiplier: 1,
-        catEars: false,
-        earAngle: 0,
-        tailAngle: 0,
-        isMoving: false,
-        id: 'player2',
-        keysPressed: {}
-      };
-      // Отправляем хосту подтверждение, что он готов
-      socket.emit('hostReady', roomId);
-    }
-  });
-
-  socket.on('clientReady', (clientData) => {
-    if (isHost) {
-      console.log('Клиент готов, данные получены:', clientData);
-      Object.assign(player2, clientData);
-      titleScreen.style.display = 'none';
-      menuBgm.pause();
-      loadLevel(1);
-      socket.emit('gameData', roomId, {
-        type: 'startGame',
-        level: currentLevel,
-        state: {
-          player: {...player},
-          player2: {...player2},
-          walls, keys, doors, npcs, enemies, chests, campfires, flowers, boss, gameObjects
+    // Handle joining a room
+    socket.on('joinRoom', (roomId) => {
+        if (!rooms[roomId]) {
+            rooms[roomId] = { players: [], level: null };
         }
-      });
-      console.log('Игра началась для хоста и клиента');
-      gameLoop();
-    }
-  });
+        if (rooms[roomId].players.length >= 2) {
+            socket.emit('roomFull', 'This room is full. Try another room.');
+            return;
+        }
+        socket.join(roomId);
+        rooms[roomId].players.push({ id: socket.id, playerNumber: rooms[roomId].players.length + 1 });
+        socket.emit('playerNumber', rooms[roomId].players.length);
 
-  socket.on('gameData', handlePeerData);
+        // If two players are in the room, start the game
+        if (rooms[roomId].players.length === 2) {
+            io.to(roomId).emit('startGame', rooms[roomId].players);
+        }
+    });
 
-  socket.on('connect_error', (err) => {
-    console.error('Socket.IO ошибка (хост):', err);
-    showDialog(["Ошибка соединения. Попробуйте снова."]);
-  });
-}
+    // Handle player position and state updates
+    socket.on('playerUpdate', (data) => {
+        const roomId = data.roomId;
+        if (rooms[roomId]) {
+            socket.to(roomId).emit('updatePlayer', {
+                playerId: socket.id,
+                pos: data.pos,
+                speed: data.speed,
+                skin: data.skin,
+                direction: data.direction,
+                keys: data.keys,
+                lives: data.lives,
+                hasSword: data.hasSword,
+                invincible: data.invincible,
+                invincibleTimer: data.invincibleTimer,
+                hasPotion: data.hasPotion,
+                damageMultiplier: data.damageMultiplier,
+                catEars: data.catEars,
+                earAngle: data.earAngle,
+                tailAngle: data.tailAngle,
+                isMoving: data.isMoving,
+                attackCooldown: data.attackCooldown
+            });
+        }
+    });
 
-// Join cooperative game
-function joinCoop(peerId) {
-  roomId = peerId;
+    // Handle key collection
+    socket.on('keyCollected', (data) => {
+        const roomId = data.roomId;
+        if (rooms[roomId]) {
+            io.to(roomId).emit('removeKey', data.keyIndex);
+        }
+    });
 
-  // Закрываем старое соединение, если оно существует
-  if (socket) {
-    socket.disconnect();
-    socket = null;
-  }
+    // Handle level state synchronization
+    socket.on('levelState', (data) => {
+        const roomId = data.roomId;
+        if (rooms[roomId]) {
+            rooms[roomId].level = data.level;
+            io.to(roomId).emit('syncLevel', data.level);
+        }
+    });
 
-  socket = io('https://neon-adventure-peerjs.onrender.com', { // Замените на ваш домен
-    transports: ['websocket'],
-    reconnection: true,
-    reconnectionAttempts: 5
-  });
+    // Handle player death
+    socket.on('playerDied', () => {
+        const roomId = Array.from(socket.rooms).find(room => room !== socket.id);
+        if (roomId && rooms[roomId]) {
+            io.to(roomId).emit('playerDied');
+        }
+    });
 
-  socket.on('connect', () => {
-    console.log('Socket.IO подключено (клиент):', socket.id);
-    console.log('Клиент пытается присоединиться к комнате:', roomId);
-    socket.emit('join', roomId);
-    isClientReady = false;
-  });
+    // Handle player disconnection
+    socket.on('disconnect', () => {
+        for (const roomId in rooms) {
+            const room = rooms[roomId];
+            const playerIndex = room.players.findIndex(p => p.id === socket.id);
+            if (playerIndex !== -1) {
+                room.players.splice(playerIndex, 1);
+                io.to(roomId).emit('playerDisconnected', socket.id);
+                if (room.players.length === 0) {
+                    delete rooms[roomId];
+                }
+                break;
+            }
+        }
+        console.log('User disconnected:', socket.id);
+    });
+});
 
-  socket.on('hostReady', () => {
-    console.log('Хост готов, клиент отправляет своё состояние');
-    isClientReady = true;
-    const clientState = {
-      x: levels[currentLevel].startPos2.x,
-      y: levels[currentLevel].startPos2.y,
-      width: 30,
-      height: 30,
-      speed: 5,
-      direction: 'right',
-      keys: 0,
-      lives: 3,
-      hasSword: false,
-      invincible: false,
-      invincibleTimer: 0,
-      color: '#f00',
-      hasPotion: false,
-      damageMultiplier: 1,
-      catEars: false,
-      earAngle: 0,
-      tailAngle: 0,
-      isMoving: false,
-      id: 'player2',
-      keysPressed: {}
-    };
-    socket.emit('clientReady', clientState);
-  });
-
-  socket.on('gameData', (data) => {
-    console.log('Клиент получил данные:', data);
-    if (data.type === 'startGame' && !isClientReady) {
-      isCoopMode = true;
-      currentLevel = data.level;
-      Object.assign(player, data.state.player2); // Клиент становится player2
-      player2 = {...data.state.player}; // Хост становится player1
-      player.id = 'player2';
-      player.color = '#f00';
-      player2.id = 'player1';
-      player2.color = '#00f';
-      walls = data.state.walls;
-      keys = data.state.keys;
-      doors = data.state.doors;
-      npcs = data.state.npcs;
-      enemies = data.state.enemies;
-      chests = data.state.chests;
-      campfires = data.state.campfires;
-      flowers = data.state.flowers;
-      boss = data.state.boss;
-      gameObjects = data.state.gameObjects;
-      levelDisplay.textContent = currentLevel;
-      objectiveDisplay.textContent = levels[currentLevel].objective;
-      keysDisplay.textContent = player.keys + (player2 ? player2.keys : 0);
-      livesDisplay.textContent = player.lives;
-      titleScreen.style.display = 'none';
-      menuBgm.pause();
-      gameLoop();
-    } else {
-      handlePeerData(data);
-    }
-  });
-
-  socket.on('connect_error', (err) => {
-    console.error('Socket.IO ошибка (клиент):', err);
-    showDialog(["Не удалось подключиться. Проверьте ID."]);
-  });
-}
+const PORT = process.env.PORT || 3000;
+http.listen(PORT, () => console.log(`Server running on port ${PORT}`));
