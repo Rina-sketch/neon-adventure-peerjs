@@ -27,16 +27,10 @@ io.on('connection', (socket) => {
         rooms[roomId].players.push(socket.id);
         
         // Уведомляем хост о новом игроке
-        io.to(roomId).emit('playerJoined', socket.id);
-        
-        // Если это второй игрок, запрашиваем состояние у хоста
-        if (rooms[roomId].players.length === 2) {
-            io.to(rooms[roomId].players[0]).emit('requestState', roomId);
-        }
+        io.to(rooms[roomId].players[0]).emit('playerJoined', socket.id);
     });
     
     socket.on('sendState', (data) => {
-        // Хост отправляет состояние новому игроку
         io.to(data.target).emit('gameState', data.state);
     });
     
