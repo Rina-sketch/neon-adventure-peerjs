@@ -10,33 +10,45 @@ app.get('/', (req, res) => res.send('Socket.IO Server'));
 const rooms = {};
 
 io.on('connection', (socket) => {
-    console.log('New connection:', socket.id);
+    console.log('A user connected:', socket.id);
 
-    socket.on('joinRoom', (roomId) => {
+    // Обработка создания/присоединения к комнате
+    socket.on('join', (roomId) => {
         if (!rooms[roomId]) {
-            socket.emit('roomError', 'Room does not exist');
-            return;
+            rooms[roomId] = { players: [], gameState: null };
+            console.log(`Room ${roomId} created`);
         }
         
         if (rooms[roomId].players.length >= 2) {
-            socket.emit('roomFull', 'Room is full');
+            socket.emit('roomFull', 'Комната заполнена. Максимум 2 игрока.');
             return;
         }
         
         socket.join(roomId);
+        const playerNumber = rooms[roomId].players.length + 1;
         rooms[roomId].players.push(socket.id);
+        socket.emit('playerNumber', playerNumber);
         
-        // Уведомляем хост о новом игроке
-        io.to(rooms[roomId].players[0]).emit('playerJoined', socket.id);
+        console.log(`Player ${socket.id} joined room ${roomId} as player ${playerNumber}`);
+        
+        if (rooms[roomId].players.length === 2) {
+            io.to(roomId).emit('startGame', { 
+                roomId: roomId,
+                players: rooms[roomId].players 
+            });
+        }
     });
-    
-    socket.on('sendState', (data) => {
-        io.to(data.target).emit('gameState', data.state);
-    });
-    
+
+    // Обработка обновлений игрока
     socket.on('playerUpdate', (data) => {
-        // Пересылаем обновления игрока другим клиентам
-        socket.to(data.roomId).emit('playerUpdate', data);
+        socket.to(data.roomId).emit('playerUpdate', {
+            playerId: socket.id,
+            pos: data.pos,
+            speed: data.speed,
+            direction: data.direction,
+            keys: data.keys,
+            lives: data.lives
+        });
     });
 
     // Обработка сбора ключей
