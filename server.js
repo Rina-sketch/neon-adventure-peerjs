@@ -10,45 +10,39 @@ app.get('/', (req, res) => res.send('Socket.IO Server'));
 const rooms = {};
 
 io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+    console.log('New connection:', socket.id);
 
-    // Обработка создания/присоединения к комнате
-    socket.on('join', (roomId) => {
+    socket.on('joinRoom', (roomId) => {
         if (!rooms[roomId]) {
-            rooms[roomId] = { players: [], gameState: null };
-            console.log(`Room ${roomId} created`);
+            socket.emit('roomError', 'Room does not exist');
+            return;
         }
         
         if (rooms[roomId].players.length >= 2) {
-            socket.emit('roomFull', 'Комната заполнена. Максимум 2 игрока.');
+            socket.emit('roomFull', 'Room is full');
             return;
         }
         
         socket.join(roomId);
-        const playerNumber = rooms[roomId].players.length + 1;
         rooms[roomId].players.push(socket.id);
-        socket.emit('playerNumber', playerNumber);
         
-        console.log(`Player ${socket.id} joined room ${roomId} as player ${playerNumber}`);
+        // Уведомляем хост о новом игроке
+        io.to(roomId).emit('playerJoined', socket.id);
         
+        // Если это второй игрок, запрашиваем состояние у хоста
         if (rooms[roomId].players.length === 2) {
-            io.to(roomId).emit('startGame', { 
-                roomId: roomId,
-                players: rooms[roomId].players 
-            });
+            io.to(rooms[roomId].players[0]).emit('requestState', roomId);
         }
     });
-
-    // Обработка обновлений игрока
+    
+    socket.on('sendState', (data) => {
+        // Хост отправляет состояние новому игроку
+        io.to(data.target).emit('gameState', data.state);
+    });
+    
     socket.on('playerUpdate', (data) => {
-        socket.to(data.roomId).emit('playerUpdate', {
-            playerId: socket.id,
-            pos: data.pos,
-            speed: data.speed,
-            direction: data.direction,
-            keys: data.keys,
-            lives: data.lives
-        });
+        // Пересылаем обновления игрока другим клиентам
+        socket.to(data.roomId).emit('playerUpdate', data);
     });
 
     // Обработка сбора ключей
