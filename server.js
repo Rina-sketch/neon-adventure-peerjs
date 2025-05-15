@@ -10,103 +10,131 @@ app.get('/', (req, res) => res.send('Socket.IO Server'));
 const rooms = {};
 
 io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+    console.log('New connection:', socket.id);
 
-    // Обработка создания/присоединения к комнате
-    socket.on('join', (roomId) => {
+    // Initialize room for host
+    rooms[socket.id] = { players: [socket.id] };
+
+    socket.on('joinRoom', (roomId) => {
         if (!rooms[roomId]) {
-            rooms[roomId] = { players: [], gameState: null };
-            console.log(`Room ${roomId} created`);
-        }
-        
-        if (rooms[roomId].players.length >= 2) {
-            socket.emit('roomFull', 'Комната заполнена. Максимум 2 игрока.');
+            socket.emit('roomError', 'Room does not exist');
+            socket.disconnect();
             return;
         }
-        
-        socket.join(roomId);
-        const playerNumber = rooms[roomId].players.length + 1;
-        rooms[roomId].players.push(socket.id);
-        socket.emit('playerNumber', playerNumber);
-        
-        console.log(`Player ${socket.id} joined room ${roomId} as player ${playerNumber}`);
-        
-        if (rooms[roomId].players.length === 2) {
-            io.to(roomId).emit('startGame', { 
-                roomId: roomId,
-                players: rooms[roomId].players 
-            });
+
+        if (rooms[roomId].players.length >= 2) {
+            socket.emit('roomFull', 'Room is full');
+            socket.disconnect();
+            return;
         }
+
+        socket.join(roomId);
+        rooms[roomId].players.push(socket.id);
+        socket.to(roomId).emit('playerJoined', socket.id);
     });
 
-    // Обработка обновлений игрока
+    socket.on('sendState', (data) => {
+        io.to(data.target).emit('gameState', data.state);
+    });
+
     socket.on('playerUpdate', (data) => {
-        socket.to(data.roomId).emit('playerUpdate', {
-            playerId: socket.id,
-            pos: data.pos,
-            speed: data.speed,
-            direction: data.direction,
-            keys: data.keys,
-            lives: data.lives
-        });
+        socket.to(data.roomId).emit('playerUpdate', data);
     });
 
-    // Обработка сбора ключей
+    socket.on('keyDown', (data) => {
+        socket.to(data.roomId).emit('keyDown', data);
+    });
+
+    socket.on('keyUp', (data) => {
+        socket.to(data.roomId).emit('keyUp', data);
+    });
+
     socket.on('keyCollected', (data) => {
-        io.to(data.roomId).emit('keyCollected', {
-            playerId: socket.id,
-            keyIndex: data.keyIndex,
-            totalKeys: data.totalKeys
-        });
+        io.in(data.roomId).emit('keyCollected', data);
     });
 
-    // Обработка открытия дверей
     socket.on('doorUnlocked', (data) => {
-        io.to(data.roomId).emit('doorUnlocked', {
-            doorIndex: data.doorIndex
-        });
+        io.in(data.roomId).emit('doorUnlocked', data);
     });
 
-    // Обработка открытия сундуков
     socket.on('chestOpened', (data) => {
-        io.to(data.roomId).emit('chestOpened', {
-            chestIndex: data.chestIndex,
-            playerId: socket.id
-        });
+        io.in(data.roomId).emit('chestOpened', data);
     });
 
-    // Обработка поражения врагов
     socket.on('enemyDefeated', (data) => {
-        io.to(data.roomId).emit('enemyDefeated', {
-            enemyIndex: data.enemyIndex,
-            playerId: socket.id
-        });
+        io.in(data.roomId).emit('enemyDefeated', data);
     });
 
-    // Обработка смерти игрока
     socket.on('playerDied', (data) => {
-        io.to(data.roomId).emit('playerDied', {
-            playerId: socket.id
-        });
+        io.in(data.roomId).emit('playerDied', data);
     });
 
-    // Обработка завершения уровня
+    socket.on('loadLevel', (data) => {
+        socket.to(data.roomId).emit('loadLevel', data);
+    });
+
     socket.on('levelComplete', (data) => {
-        io.to(data.roomId).emit('levelComplete');
+        io.in(data.roomId).emit('levelComplete');
     });
 
-    // Обработка отключения игрока
+    socket.on('openPuzzle', (data) => {
+        socket.to(data.roomId).emit('openPuzzle');
+    });
+
+    socket.on('openSkinMenu', (data) => {
+        socket.to(data.roomId).emit('openSkinMenu');
+    });
+
+    socket.on('closeSkinMenu', (data) => {
+        socket.to(data.roomId).emit('closeSkinMenu');
+    });
+
+    socket.on('dialogAdvance', (data) => {
+        socket.to(data.roomId).emit('dialogAdvance', data);
+    });
+
+    socket.on('bossUpdate', (data) => {
+        socket.to(data.roomId).emit('bossUpdate', data);
+    });
+
+    socket.on('bossProjectile', (data) => {
+        socket.to(data.roomId).emit('bossProjectile', data);
+    });
+
+    socket.on('projectileRemoved', (data) => {
+        socket.to(data.roomId).emit('projectileRemoved', data);
+    });
+
+    socket.on('enemiesUpdate', (data) => {
+        socket.to(data.roomId).emit('enemiesUpdate', data);
+    });
+
+    socket.on('projectilesUpdate', (data) => {
+        socket.to(data.roomId).emit('projectilesUpdate', data);
+    });
+
+    socket.on('puzzleAttempt', (data) => {
+        io.in(data.roomId).emit('puzzleAttempt', data);
+    });
+
+    socket.on('puzzleSolved', (data) => {
+        io.in(data.roomId).emit('puzzleSolved');
+    });
+
+    socket.on('puzzleReset', (data) => {
+        io.in(data.roomId).emit('puzzleReset');
+    });
+
     socket.on('disconnect', () => {
+        console.log('Disconnected:', socket.id);
         for (const roomId in rooms) {
-            const index = rooms[roomId].players.indexOf(socket.id);
-            if (index !== -1) {
-                rooms[roomId].players.splice(index, 1);
-                io.to(roomId).emit('playerDisconnected', socket.id);
-                console.log(`Player ${socket.id} disconnected from room ${roomId}`);
-                
-                if (rooms[roomId].players.length === 0) {
+            const room = rooms[roomId];
+            const playerIndex = room.players.indexOf(socket.id);
+            if (playerIndex !== -1) {
+                room.players.splice(playerIndex, 1);
+                io.in(roomId).emit('playerDisconnected', socket.id);
+                if (room.players.length === 0) {
                     delete rooms[roomId];
-                    console.log(`Room ${roomId} deleted (no players)`);
                 }
                 break;
             }
