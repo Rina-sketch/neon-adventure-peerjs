@@ -12,7 +12,6 @@ const rooms = {};
 io.on('connection', (socket) => {
     console.log('New connection:', socket.id);
 
-    // Initialize room for host
     rooms[socket.id] = { players: [socket.id] };
 
     socket.on('joinRoom', (roomId) => {
@@ -38,7 +37,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('playerUpdate', (data) => {
-        console.log('playerUpdate received:', data); // Added for debugging
+        console.log('playerUpdate received:', data);
         socket.to(data.roomId).emit('playerUpdate', data);
     });
 
@@ -124,6 +123,31 @@ io.on('connection', (socket) => {
 
     socket.on('puzzleReset', (data) => {
         io.in(data.roomId).emit('puzzleReset');
+    });
+
+    socket.on('playerJoined', (playerId) => {
+        console.log('Player joined:', playerId);
+        socket.emit('sendState', {
+            target: playerId,
+            state: {
+                level: currentLevel,
+                player: { ...player, id: 'player1' },
+                player2: { ...player2, id: 'player2' },
+                walls: walls.map(w => ({ ...w })),
+                keys: keys.map(k => ({ ...k })),
+                doors: doors.map(d => ({ ...d })),
+                npcs: npcs.map(n => ({ ...n })),
+                enemies: enemies.map(e => ({ ...e })),
+                chests: chests.map(c => ({ ...c })),
+                campfires: campfires.map(c => ({ ...c })),
+                flowers: flowers.map(f => ({ ...f })),
+                boss: boss ? { ...boss } : null,
+                gameObjects: gameObjects.map(o => ({ ...o })),
+                puzzleAttempt: [...puzzleAttempt],
+                puzzleSolution: [...puzzleSolution],
+                bossDefeated: bossDefeated
+            }
+        });
     });
 
     socket.on('disconnect', () => {
