@@ -38,6 +38,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('playerUpdate', (data) => {
+        console.log('playerUpdate received:', data); // Added for debugging
         socket.to(data.roomId).emit('playerUpdate', data);
     });
 
