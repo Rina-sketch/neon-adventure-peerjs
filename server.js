@@ -14,7 +14,6 @@ io.on('connection', (socket) => {
 
     // Initialize room for host
     rooms[socket.id] = { players: [socket.id] };
-    socket.join(socket.id);
 
     socket.on('joinRoom', (roomId) => {
         if (!rooms[roomId]) {
