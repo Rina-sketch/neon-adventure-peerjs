@@ -38,7 +38,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('playerUpdate', (data) => {
-        socket.to(data.roomId).emit('playerUpdate', data);
+        io.in(data.roomId).emit('playerUpdate', data);
     });
 
     socket.on('keyDown', (data) => {
